@@ -1,6 +1,14 @@
 import { join, delimiter, normalize } from 'node:path';
 import { accessSync, existsSync, constants } from "node:fs";
 
+import * as child_process from "node:child_process";
+import * as os from "node:os";
+
+
+export type SpawnProcessOptions = child_process.SpawnOptionsWithoutStdio & {
+  spawnArgs: string[],
+}
+
 // @ts-ignore
 import systeminformation from "systeminformation";
 
@@ -23,6 +31,53 @@ export async function isPortInUse(port: string) {
 
 function normalizePath(path: string): string {
   return normalize(windows ? path.toLowerCase() : path);
+}
+
+export function configureProcessSpawnArgs(
+  spawnOptions: SpawnProcessOptions,
+  terminalName: string,
+  terminalPath: string,
+  nvimPath: string,
+  port: string
+) {
+  if (!windows) {
+    spawnOptions.spawnArgs = ["-e", nvimPath, "--listen", port];
+    spawnOptions.shell = os.userInfo().shell || true;
+    console.debug(`edit-in-neovim:\nProcess spawn config for macos/linux: ${JSON.stringify(spawnOptions, null, 2)}`)
+    return spawnOptions;
+  }
+
+  if (terminalName === 'alacritty.exe' || terminalName === 'wezterm.exe' || terminalName === 'kitty.exe') {
+    spawnOptions.spawnArgs = ['-e', nvimPath, '--listen', port];
+    console.debug(`edit-in-neovim:\nProcess spawn config for windows and ${terminalName}: ${JSON.stringify(spawnOptions, null, 2)}`)
+    return spawnOptions;
+  }
+
+  if (terminalName === 'wt.exe') {
+    spawnOptions.spawnArgs = ['new-tab', '--title', 'Neovim', nvimPath, '--listen', port];
+    console.debug(`edit-in-neovim:\nProcess spawn config for windows terminal: ${JSON.stringify(spawnOptions, null, 2)}`)
+    return spawnOptions;
+  }
+
+  if (terminalName === 'powershell.exe' || terminalName === 'pwsh.exe') {
+    const command = `Start-Process -FilePath '${nvimPath}' -ArgumentList '--listen ${port}' -WindowStyle Normal`;
+    spawnOptions.spawnArgs = ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-NoExit', '-Command', command];
+    spawnOptions.shell = true;
+    console.debug(`edit-in-neovim:\nProcess spawn config for powershell: ${JSON.stringify(spawnOptions, null, 2)}`)
+    return spawnOptions;
+  }
+
+  if (terminalName === 'cmd.exe') {
+    spawnOptions.spawnArgs = ['/c', 'start', `"Neovim"`, `"${nvimPath}"`, '--listen', port];
+    spawnOptions.shell = true;
+    console.debug(`edit-in-neovim:\nProcess spawn config for ${terminalName}: ${JSON.stringify(spawnOptions, null, 2)}`)
+    return spawnOptions;
+  }
+
+  console.warn(`Unknown/unhandled Windows terminal: ${terminalPath}. Using fallback, this is likely to fail.`);
+  spawnOptions.spawnArgs = ['-e', nvimPath, '--listen', port];
+  console.info(`edit-in-neovim:\nProcess spawn config for ${terminalName}: ${JSON.stringify(spawnOptions, null, 2)}`)
+  return spawnOptions;
 }
 
 export function searchForBinary(name: string): string | undefined {
