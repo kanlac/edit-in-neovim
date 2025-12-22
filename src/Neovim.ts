@@ -84,6 +84,7 @@ export default class Neovim {
 
     const extraEnvVars: Record<string, string> = {}
     if (this.apiKey) extraEnvVars["OBSIDIAN_REST_API_KEY"] = this.apiKey
+    if (this.settings.appname !== "") extraEnvVars["NVIM_APPNAME"] = this.settings.appname
 
     const terminalName = this.termBinary.split('\\').pop()?.toLowerCase() || '';
     const defaultSpawnOptions: SpawnProcessOptions = {

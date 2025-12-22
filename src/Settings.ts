@@ -8,6 +8,7 @@ export interface EditInNeovimSettings {
   openNeovimOnLoad: boolean;
   supportedFileTypes: string[];
   pathToBinary: string;
+  appname: string;
 }
 
 export const DEFAULT_SETTINGS: EditInNeovimSettings = {
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: EditInNeovimSettings = {
   openNeovimOnLoad: true,
   supportedFileTypes: ["txt", "md", "css", "js", "ts", "tsx", "jsx", "json"],
   pathToBinary: "",
+  appname: "",
 };
 
 export default class EditInNeovimSettingsTab extends PluginSettingTab {
@@ -76,6 +78,22 @@ export default class EditInNeovimSettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    new Setting(containerEl)
+      .setName("NVIM_APPNAME")
+      .setDesc(
+        "If you have a specific neovim distro you'd like to use (lazyvim for example), leave blank to use your default neovim config.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("lazyvim, my_writing_config, etc.")
+          .setValue(this.plugin.settings.appname)
+          .onChange(async (value) => {
+            this.plugin.settings.appname = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
 
     new Setting(containerEl)
       .setName("Open on startup")

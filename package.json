@@ -1,6 +1,6 @@
 {
 	"name": "edit-in-neovim",
-	"version": "1.3.1",
+	"version": "1.4.0",
 	"description": "This is an obsidian plugin that allows you to automatically open buffers in neovim when focusing on a tab inside obsidian",
 	"main": "main.js",
 	"scripts": {
