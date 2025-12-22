@@ -12,6 +12,10 @@ This plugin will pop open a new terminal and runs neovim inside it (You can turn
 
 After that, every time you open a file inside of Obsidian, that same file will get opened as a new buffer (or focused if already open) inside of the listening neovim instance. This effectively gives you the "linked tabs" functionality you would get inside Obsidian, but with an external editor (in this case neovim) instead.
 
+## Why?
+
+I know Obsidian has vim bindings, but I've built up my own Neovim config and customised it to my liking and that's where I like to edit text.
+
 ### Have new Neovim buffers open in Obsidian
 
 If you also want new buffers in Neovim to open up in Obsidian, here's what you'll need:
@@ -21,6 +25,11 @@ If you also want new buffers in Neovim to open up in Obsidian, here's what you'l
 
 These _should_ work out of the box. But there is a bug that occurs when files are being renamed or deleted from within obsidian while the corresponding buffer is open in neovim; resulting in infinite loops. It's recommend to do file operations from within neovim while using the plugin.
 
-## Why?
+## Edge Cases
 
-I know Obsidian has vim bindings, but I've built up my own Neovim config and customised it to my liking and that's where I like to edit text.
+There's alot of different terminals, systems, and just ways to install neovim. As
+such there's a good chance there's a few cases where this plugin doesn't work as I'd
+hope it would, or where you need to handle things alil differently. Below is a
+non-exhaustive lists containing the ones I've seen so far:
+
+- When using [Ghostty](https://ghostty.org/) on MacOS, set the terminal path to: `/Applications/Ghostty.app/Contents/MacOS/ghostty`.
