@@ -2,6 +2,7 @@ import { TFile, FileSystemAdapter, Notice } from "obsidian";
 import { findNvim, attach } from "neovim";
 import { EditInNeovimSettings } from "./Settings";
 import * as child_process from "node:child_process";
+import * as net from "node:net";
 import { isPortInUse, searchForBinary, searchDirs, configureProcessSpawnArgs, SpawnProcessOptions } from "./utils";
 
 export default class Neovim {
@@ -17,11 +18,11 @@ export default class Neovim {
     this.adapter = adapter;
     this.settings = settings;
     this.apiKey = apiKey;
-    this.termBinary = searchForBinary(settings.terminal);
+    this.termBinary = settings.terminal ? searchForBinary(settings.terminal) : undefined;
     this.nvimBinary = undefined;
 
-    if (!this.termBinary) {
-      console.warn(`Could find binary for ${settings.terminal}, double check it's on your PATH`)
+    if (settings.terminal && !this.termBinary) {
+      console.warn(`Could not find binary for ${settings.terminal}, double check it's on your PATH`)
     }
 
     if (this.settings.pathToBinary) {
@@ -72,11 +73,6 @@ export default class Neovim {
       return;
     }
 
-    if (!this.termBinary) {
-      new Notice("Terminal undefined, skipping command", 5000)
-      return;
-    }
-
     if (!this.nvimBinary || this.nvimBinary?.path === "") {
       new Notice("No path to valid nvim binary has been found, skipping command", 5000)
       return;
@@ -86,7 +82,70 @@ export default class Neovim {
     if (this.apiKey) extraEnvVars["OBSIDIAN_REST_API_KEY"] = this.apiKey
     if (this.settings.appname !== "") extraEnvVars["NVIM_APPNAME"] = this.settings.appname
 
-    const terminalName = this.termBinary.split('\\').pop()?.toLowerCase() || '';
+    const useHeadless = !this.termBinary;
+
+    if (useHeadless) {
+      await this.spawnHeadless(adapter, extraEnvVars);
+    } else {
+      await this.spawnWithTerminal(adapter, extraEnvVars);
+    }
+  }
+
+  private async spawnHeadless(adapter: FileSystemAdapter, extraEnvVars: Record<string, string>) {
+    const spawnArgs = ['--headless', '--listen', this.settings.listenOn];
+
+    console.debug(`Attempting to spawn headless Neovim:
+      Executable: ${this.nvimBinary!.path}
+      Arguments: ${JSON.stringify(spawnArgs)}`);
+
+    try {
+      this.process = child_process.spawn(this.nvimBinary!.path, spawnArgs, {
+        cwd: adapter.getBasePath(),
+        env: { ...process.env, ...extraEnvVars },
+        stdio: 'ignore',
+      });
+
+      if (!this.process || this.process.pid === undefined) {
+        new Notice("Failed to create Neovim process", 5000);
+        this.process = undefined;
+        return;
+      }
+
+      console.debug(`Neovim headless process running, PID: ${this.process.pid}`);
+      this.registerProcessEvents();
+
+      // Attach via socket after nvim starts
+      setTimeout(async () => {
+        try {
+          const listenAddr = this.settings.listenOn;
+          const colonIdx = listenAddr.lastIndexOf(':');
+          if (colonIdx > 0) {
+            const host = listenAddr.substring(0, colonIdx);
+            const port = parseInt(listenAddr.substring(colonIdx + 1));
+            const socket = net.createConnection({ host, port });
+            this.instance = attach({ reader: socket, writer: socket });
+          } else {
+            this.instance = attach({ socket: listenAddr });
+          }
+          await this.instance.eval('1');
+          console.debug("Neovim RPC connection test successful.");
+          new Notice(`Neovim server started on ${this.settings.listenOn}\nConnect with: nvim --server ${this.settings.listenOn} --remote-ui`, 5000);
+        } catch (error) {
+          console.error("Neovim RPC connection failed after spawn:", error);
+          new Notice(`Failed to connect to Neovim server: ${(error as Error).message}`, 7000);
+          this.close();
+        }
+      }, 1500);
+    } catch (error) {
+      console.error("Error caught during child_process.spawn call itself:", error);
+      new Notice(`Error trying to spawn Neovim: ${(error as Error).message}`, 10000);
+      this.process = undefined;
+      this.instance = undefined;
+    }
+  }
+
+  private async spawnWithTerminal(adapter: FileSystemAdapter, extraEnvVars: Record<string, string>) {
+    const terminalName = this.termBinary!.split('\\').pop()?.toLowerCase() || '';
     const defaultSpawnOptions: SpawnProcessOptions = {
       spawnArgs: [],
       cwd: adapter.getBasePath(),
@@ -95,7 +154,7 @@ export default class Neovim {
       detached: false,
     };
 
-    const spawnOptions = configureProcessSpawnArgs(defaultSpawnOptions, terminalName, this.termBinary, this.nvimBinary.path, this.settings.listenOn);
+    const spawnOptions = configureProcessSpawnArgs(defaultSpawnOptions, terminalName, this.termBinary!, this.nvimBinary!.path, this.settings.listenOn);
 
     console.debug(`Attempting to spawn process:
       Platform: ${process.platform}
@@ -104,7 +163,7 @@ export default class Neovim {
       Options: ${JSON.stringify(spawnOptions)}`);
 
     try {
-      this.process = child_process.spawn(this.termBinary, spawnOptions.spawnArgs, spawnOptions);
+      this.process = child_process.spawn(this.termBinary!, spawnOptions.spawnArgs, spawnOptions);
 
       if (!this.process || this.process.pid === undefined) {
         new Notice("Failed to create Neovim process", 5000);
@@ -113,31 +172,7 @@ export default class Neovim {
       }
 
       console.debug(`Neovim process running, PID: ${this.process.pid}`);
-
-      this.process?.on("error", (err) => {
-        new Notice("edit-in-neovim:\nNeovim ran into a error, see logs for details");
-        console.error(`Neovim process ran into an error: ${JSON.stringify(err, null, 2)}`);
-        this.process = undefined;
-        this.instance = undefined;
-      });
-
-      this.process?.on("close", (code) => {
-        console.info(`nvim closed with code: ${code}`);
-        this.process = undefined;
-        this.instance = undefined;
-      });
-
-      this.process?.on("disconnect", () => {
-        console.info("nvim disconnected");
-        this.process = undefined;
-        this.instance = undefined;
-      });
-
-      this.process?.on("exit", (code) => {
-        console.info(`nvim closed with code: ${code}`);
-        this.process = undefined;
-        this.instance = undefined;
-      });
+      this.registerProcessEvents();
 
       console.debug("Attaching to Neovim process...")
       this.instance = attach({ proc: this.process! });
@@ -150,17 +185,43 @@ export default class Neovim {
           new Notice("Neovim instance started and connected.", 3000);
         } catch (error) {
           console.error("Neovim RPC connection failed after spawn:", error);
-          new Notice(`Failed to establish RPC connection: ${error.message}`, 7000);
+          new Notice(`Failed to establish RPC connection: ${(error as Error).message}`, 7000);
           this.close();
         }
       }, 1500);
     } catch (error) {
       console.error("Error caught during child_process.spawn call itself:", error);
-      new Notice(`Error trying to spawn Neovim: ${error.message}`, 10000);
+      new Notice(`Error trying to spawn Neovim: ${(error as Error).message}`, 10000);
       this.process = undefined;
       this.instance = undefined;
     }
+  }
 
+  private registerProcessEvents() {
+    this.process?.on("error", (err) => {
+      new Notice("edit-in-neovim:\nNeovim ran into an error, see logs for details");
+      console.error(`Neovim process ran into an error: ${JSON.stringify(err, null, 2)}`);
+      this.process = undefined;
+      this.instance = undefined;
+    });
+
+    this.process?.on("close", (code) => {
+      console.info(`nvim closed with code: ${code}`);
+      this.process = undefined;
+      this.instance = undefined;
+    });
+
+    this.process?.on("disconnect", () => {
+      console.info("nvim disconnected");
+      this.process = undefined;
+      this.instance = undefined;
+    });
+
+    this.process?.on("exit", (code) => {
+      console.info(`nvim closed with code: ${code}`);
+      this.process = undefined;
+      this.instance = undefined;
+    });
   }
 
   openFile = async (file: TFile | null) => {
