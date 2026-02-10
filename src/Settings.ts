@@ -12,7 +12,7 @@ export interface EditInNeovimSettings {
 }
 
 export const DEFAULT_SETTINGS: EditInNeovimSettings = {
-  terminal: process.env.TERMINAL || "alacritty",
+  terminal: process.env.TERMINAL || "",
   listenOn: "127.0.0.1:2006",
   openNeovimOnLoad: true,
   supportedFileTypes: ["txt", "md", "css", "js", "ts", "tsx", "jsx", "json"],
